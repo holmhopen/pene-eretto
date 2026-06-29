@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Semantic Enrichment of Villa Lante</title>
+<link rel="stylesheet" href="css/style.css">
+
+
+<style>
+        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; color: #333; }
+        h1 { color: #0056b3; }
+        button { padding: 10px 20px; font-size: 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #218838; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        #status { margin-top: 15px; font-weight: bold; color: #666; }
+</style>
+
+
+</head>
+
+<body>
+
+<center>
+<nav>
+    <a href="index.html">Home</a>
+    <a href="research.html">Research Question</a>
+    <a href="methodology.html">Methodology</a>
+    <a href="queries.html">SPARQL Queries</a>
+    <a href="prompts.html">Prompt Engineering</a>
+    <a href="enrichment.html">RDF Enrichment</a>
+    <a href="microdata.html">HTML Microdata</a>
+    <a href="results.html">Results</a>
+    <a href="challenges.html">Challenges</a>
+    <a href="evaluation.html">Evaluation</a>
+	  
+	<a href="example01.html">example 1 </a>
+	<a href="example02.html"> 2 </a>
+	<a href="example03.html"> 3 </a>
+</nav>
+</center>
+
+<div class="container">
+
+
+
+
+
+
+<section>
+
+    <h1>Interrogazione SPARQL ArCo: Villa Lante</h1>
+    <p>Questo script interroga l'endpoint Linked Open Data dei Beni Culturali Italiani (ArCo) cercando i record di catalogo che contengono "Villa Lante" nella descrizione o nel titolo.</p>
+    
+    <button id="btnQuery">Cerca su ArCo</button>
+    <div id="status"></div>
+
+    <table id="resultsTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>Titolo / Descrizione del Bene</th>
+                <th>Tipo di Bene</th>
+                <th>URI Risorsa ArCo</th>
+            </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+    </table>
+
+    <script>
+        document.getElementById('btnQuery').addEventListener('click', eseguiSparqlArCo);
+
+        async function eseguiSparqlArCo() {
+            const statusDiv = document.getElementById('status');
+            const table = document.getElementById('resultsTable');
+            const tbody = document.getElementById('resultsBody');
+            
+            statusDiv.style.color = '#666';
+            statusDiv.innerText = 'Interrogazione del grafo dei Beni Culturali in corso (puo\' richiedere qualche secondo)...';
+            tbody.innerHTML = '';
+            table.style.display = 'none';
+
+            // Endpoint ufficiale del Ministero della Cultura gestito da ArCo
+            const endpointUrl = 'https://dati.beniculturali.it/sparql';
+            
+            // Query SPARQL ottimizzata per ArCo.
+            // Filtra le etichette rdfs:label che contengono "Villa Lante" (case-insensitive "i")
+            const sparqlQuery = `
+                PREFIX arco: <https://w3id.org/arco/ontology/arco/>
+                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+                SELECT DISTINCT ?culturalProperty ?label ?type WHERE {
+                  ?culturalProperty rdfs:label ?label .
+                  ?culturalProperty rdf:type ?type .
+                  
+                  # Filtro per cercare l'entità specifica
+                  FILTER (regex(str(?label), "Villa Lante", "i"))
+                } 
+                LIMIT 50
+            `;
+
+            // Costruiamo la URL per la richiesta GET richiedendo il formato JSON
+            const fullUrl = endpointUrl + '?query=' + encodeURIComponent(sparqlQuery) + '&format=json';
+
+            try {
+                const response = await fetch(fullUrl);
+
+                if (!response.ok) {
+                    throw new Error(`Errore ArCo: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const bindings = data.results.bindings;
+
+                if (!bindings || bindings.length === 0) {
+                    statusDiv.style.color = 'orange';
+                    statusDiv.innerText = "Nessun dato trovato per 'Villa Lante' nell'endpoint attuale.";
+                    return;
+                }
+
+                // Generazione delle righe nella tabella
+                bindings.forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    // 1. Colonna Etichetta/Titolo
+                    const tdLabel = document.createElement('td');
+                    tdLabel.innerText = row.label.value;
+                    tr.appendChild(tdLabel);
+                    
+                    // 2. Colonna Tipo di Bene (estrae solo la parte finale dell'URI del tipo)
+                    const tdType = document.createElement('td');
+                    const typeUri = row.type.value;
+                    const typeCleaned = typeUri.substring(typeUri.lastIndexOf('/') + 1).replace('#', '');
+                    tdType.innerText = typeCleaned;
+                    tr.appendChild(tdType);
+
+                    // 3. Colonna URI dell'oggetto originale
+                    const tdUri = document.createElement('td');
+                    const link = document.createElement('a');
+                    link.href = row.culturalProperty.value;
+                    link.target = '_blank';
+                    link.className = 'uri-link';
+                    link.innerText = row.culturalProperty.value;
+                    tdUri.appendChild(link);
+                    tr.appendChild(tdUri);
+                    
+                    tbody.appendChild(tr);
+                });
+
+                statusDiv.style.color = 'green';
+                statusDiv.innerText = `Trovati ${bindings.length} elementi associati a Villa Lante!`;
+                table.style.display = 'table';
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.style.color = 'red';
+                statusDiv.innerText = "Errore durante il recupero dei dati da ArCo: " + error.message;
+            }
+        }
+
+ </script>
+
+
+</section>
+
+
+
+
+
+
+
+</div>
+
+</body>
+</html>
